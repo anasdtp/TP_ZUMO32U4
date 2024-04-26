@@ -3,6 +3,9 @@
 class Asservissement
 {
 public:
+  Asservissement(){
+    
+  }
   Asservissement(float Kp, float Ki, float Kd);
   ~Asservissement();
 

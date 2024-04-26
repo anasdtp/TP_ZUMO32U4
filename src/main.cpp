@@ -19,6 +19,13 @@ typedef struct FIGURE{
 
 FIGURE fig;
 
+Zumo32U4LCD display;
+
+Zumo32U4IMU imu;
+
+char report[120];
+
+
 void mvt_ligneDroite(int centimetre);
 void mvt_rotation(int degree);
 
@@ -29,8 +36,24 @@ void figure_triangle(int centimetre);
 
 bool frontBP(int pin);
 void clignotementLeds(bool yellow, bool red, bool green);
+void AffichageLed(Position position);
+void CentraleInertielle();
 void setup() {
   Serial.begin(115200);
+  Wire.begin();
+  if (!imu.init())
+  {
+    // Failed to detect the compass.
+    ledRed(1);
+    while(1)
+    {
+      Serial.println(F("Failed to initialize IMU sensors."));
+      delay(100);
+    }
+  }
+
+  imu.enableDefault();
+
   delay(100);
   
   motorD = new Asservissement(Kp, Ki, Kd);
@@ -39,7 +62,7 @@ void setup() {
   
   // ligneDroite(5);
   // mvt_rotation(90);
-  figure_carre(10);
+  // figure_carre(10);
   // figure_triangle(10);
 }
 
@@ -50,6 +73,10 @@ void loop() {
   mvt_figure_loop();
 
   clignotementLeds(true, true, true);
+
+  AffichageLed(mvt->getPosition());
+
+  CentraleInertielle();
 }
 
 void mvt_ligneDroite(int centimetre){
@@ -159,13 +186,91 @@ bool frontBP(int pin){
 }
 
 void clignotementLeds(bool yellow, bool red, bool green){
-  static int init = true, pinGreen = 30, pinRed = 17, pinYellow = 13, tempsMs = 200, etatLed = true;
-  static unsigned long startMs = 0;
+  static int init = true, pinGreen = 30, pinRed = 17, pinYellow = 13, etatLed = true;
+  static unsigned long startMs = 0, tempsMs = 200;
   if(init){init = false; pinMode(pinGreen, OUTPUT); pinMode(pinRed, OUTPUT); pinMode(pinYellow, OUTPUT);}
 
   if((millis() - startMs)>=(tempsMs)){
     startMs = millis();
     etatLed = !etatLed;
     digitalWrite(pinGreen, yellow&(!etatLed)); digitalWrite(pinRed, red&(!etatLed)); digitalWrite(pinYellow, green&etatLed);
+  }
+}
+
+void AffichageLed(Position position){
+  static unsigned long startMs = 0, tempsMs = 500;
+  static Position pastPosition;
+  if((millis() - startMs)>=(tempsMs)){
+    // startMs = millis();
+    if(pastPosition.x!=position.x || pastPosition.y!=position.y || pastPosition.theta!=position.theta){
+      pastPosition.x = position.x;
+      pastPosition.y = position.y;
+      pastPosition.theta = position.theta;
+        // Clear the screen
+      display.clear();
+      // Print a string
+      display.print("x : ");
+      // Print a number
+      display.print(int(position.x*100.));
+      // Go to the next line
+      display.gotoXY(0, 1);
+      display.print("y : ");
+      // Print a number
+      display.print(int(position.y*100.));
+      // Go to the next line
+      // display.gotoXY(0, 2);
+      // display.print("t : ");
+      // // Print a number
+      // display.print(position.theta);
+    }
+    // Serial.println(position.x);
+    // Serial.println(position.y);
+    // Serial.println(position.theta*180./M_PI);//EN degrés
+    // Serial.println("");
+    startMs = millis();  
+  }
+}
+
+void CentraleInertielle(){
+  static unsigned long startMs = 0, tempsMs = 100;
+  if((millis() - startMs)>=(tempsMs)){
+    imu.read();//On récupére les données des capteurs
+    //On enregistre les données dans des variables
+    float accx = imu.a.x* 0.061e-3 * 9.8, 
+          accy = imu.a.y* 0.061e-3 * 9.8, 
+          accz = imu.a.z* 0.061e-3 * 9.8;
+    // Serial.print(accx);
+    // Serial.print("m/s² ");
+    // Serial.print(accy);
+    // Serial.print("m/s² ");
+    // Serial.print(accz);
+    // Serial.print("m/s² ");//On affiche les données afin de tester le bon fonctionnement
+    
+    float angle= atan(accx/accz)*180./PI;
+    // Serial.print("angle ");
+    // Serial.print(angle);
+    // Serial.println("° ");
+
+    float GyroX = imu.m.x* 90./10285. , 
+          GyroY = imu.m.y* 90./10285., 
+          GyroZ = imu.m.z* 90./10285.;
+
+    // Calcul du cap du robot à partir du gyroscope
+    float cap = GyroZ/1000. * (millis() / 1000.0); // mise à jour du cap
+
+    Serial.print("GyroX: ");
+    Serial.print(GyroX);
+    Serial.print(" mDeg/s, GyroY: ");
+    Serial.print(GyroY);
+    Serial.print(" mDeg/s, GyroZ: ");
+    Serial.print(GyroZ);
+    Serial.println(" mDeg/s");
+
+    Serial.print("Cap du robot: ");
+    Serial.print(cap);
+    Serial.println(" degrés");
+
+
+    startMs = millis();
   }
 }

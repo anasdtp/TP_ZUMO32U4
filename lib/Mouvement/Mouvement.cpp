@@ -1,4 +1,48 @@
-#include <Mouvement.h>
+#include "Mouvement.h"
+
+float acc_max = 0.85, v_max = 0.8, dcc_max = 0.8;
+float ta = v_max / acc_max;
+float d_max = v_max * v_max / acc_max;
+float distance_;
+FuncType Mouvement::fnVitesse2(float distance)
+{
+    distance_ = distance;
+    if (distance < d_max)
+    {
+        return static_cast<FuncType>([](float time) -> float
+        {
+            float time_lim = sqrt(distance_ / acc_max);
+            if (time < time_lim)
+                return acc_max * time;
+            else
+                return v_max - acc_max * (time - time_lim);
+        });
+    }
+    else
+    {
+        return static_cast<FuncType>([](float time) -> float
+        {
+            float tc = (distance_ - d_max) / v_max;
+            if (time < ta)
+                return acc_max * time;
+            else if (time >= ta && time <= tc + ta)
+                return v_max;
+            else
+                return v_max - acc_max * (time - ta - tc);
+        });
+    }
+}
+
+float Mouvement::trajectoire(float time, FuncType velocityProfile)
+{
+    float trajectory = 0.0;
+    for (float t = 0.0; t <= time; t += time)
+    {
+        trajectory += velocityProfile(t) * time;
+    }
+
+    return trajectory;
+}
 
 Mouvement::Mouvement(Asservissement *motorD, Asservissement *motorG)
 {
@@ -6,7 +50,7 @@ Mouvement::Mouvement(Asservissement *motorD, Asservissement *motorG)
     motorG_ = motorG;
     resetCodeurD();
     resetCodeurG();
-    x_pos = 0; y_pos = 0; theta_pos = 0;
+    pos_ = (Position){0,0,0};
     finMvtElem = false;
     next_action = false;
     liste.type = TYPE_MOUVEMENT_SUIVANT;
@@ -32,23 +76,29 @@ void Mouvement::loop()
 }
 
 void Mouvement::Odometrie(){
-    posD = lireCodeurD();
-    posG = lireCodeurG();
-    
-    float deltaDist, ang;
+    static float deltaDist, ang, init = true;
+    if(init){init = false; resetCodeurD(); resetCodeurG();}
+
+    posD = lireCodeurD()*1.;
+    posG = lireCodeurG()*1.;
 
     deltaDist = 0.5*((posD - pastPosD) + (posG - pastPosG));
 
     //Calcul de la valeur de l'angle parcouru
-    ang = (((posD - pastPosD) - (posG - pastPosG))*1800.0*PERIMETRE_ROUE/(LARGEUR_ROBOT*M_PI*RESOLUTION_ROUE_CODEUSE));
+    // ang = (((posD - pastPosD) - (posG - pastPosG))*PERIMETRE_ROUE*1800.0/(LARGEUR_ROBOT*M_PI*RESOLUTION_ROUE_CODEUSE));
+    ang = ((posD - pastPosD) - (posG - pastPosG))*PI/1800.0;
     
     //Determination de la position sur le terrain en X, Y, Theta
-    theta_pos +=  ang; 
-    x_pos += deltaDist*cos((double)(theta_pos*M_PI/1800.0))*PERIMETRE_ROUE/RESOLUTION_ROUE_CODEUSE;
-    y_pos += deltaDist*sin((double)(theta_pos*M_PI/1800.0))*PERIMETRE_ROUE/RESOLUTION_ROUE_CODEUSE;
+    pos_.theta +=  (ang);  //en radians
+    pos_.x += deltaDist*cos((double)(pos_.theta))*PERIMETRE_ROUE/RESOLUTION_ROUE_CODEUSE; //En metres
+    pos_.y += deltaDist*sin((double)(pos_.theta))*PERIMETRE_ROUE/RESOLUTION_ROUE_CODEUSE; //En metres
 
     pastPosD = posD;
     pastPosG = posG;
+    // Serial.println(pos_.x);
+    // Serial.println(pos_.y);
+    // Serial.println(pos_.theta*180./PI);//EN de
+    // Serial.println("");
 }
 
 void Mouvement::calcul(){
@@ -127,18 +177,59 @@ bool Mouvement::nextActionPossible(){
 
 void Mouvement::ligneDroite(float distance, float dt){//En mm
     static char etat_mouvement = 0; 
-    static float distEn1Sec = 184.5, coef = 1./distEn1Sec;
-    static float waitTime = 1., sens = 1;
+    static float cmdD = 0., cmdG = 0.;
+    static Position targetPos;
     // float dist = (distance * RESOLUTION_ROUE_CODEUSE) / PERIMETRE_ROUE;//En tick d'encodeurs
     switch (etat_mouvement)
     {
     case 0:
     {
-        waitTime = distance * coef;
-        if(distance < 0){sens = -1;}
+        traj = fnVitesse2(distance);
+
+        targetPos.theta = pos_.theta;
+        targetPos.x = pos_.x + distance*cos(targetPos.theta);
+        targetPos.y = pos_.y + distance*sin(targetPos.theta);
+
+        start_time = millis();
+        etat_mouvement = 1;
+    }
+    break;
+    case 1:
+    {
+        // Generate trajectory based on desired position
+        float trajectory = trajectoire(dt, traj);
+        float error = trajectory + getDistance(pos_, targetPos);
+    }
+    break;
+    case 2:
+    {
+        
+        finMvtElem = true;
+        etat_mouvement = 0;
+    }
+    break;
+    default:
+        break;
+    }
+
+    write_PWMD(cmdD);
+    write_PWMG(cmdG);
+}
+
+void Mouvement::rotation(float angle, float dt){//En degres
+    static char etat_mouvement = 0; 
+    static float degreeEn1Sec = 135., coef = 1./degreeEn1Sec;
+    static float waitTime = 1., sens = 1;
+    // angle = LARGEUR_ROBOT * PI * RESOLUTION_ROUE_CODEUSE * angle / (360 * PERIMETRE_ROUE)//En tick d'encodeurs
+    switch (etat_mouvement)
+    {
+    case 0:
+    {
+        waitTime = angle * coef;
+        if(angle < 0){sens = -1;}
         else{sens = 1;}
-        write_PWMD((VIT_MAX/2) * sens);
-        write_PWMG((VIT_MAX/2)  * sens);
+        write_PWMD((-VIT_MAX/2) * sens);
+        write_PWMG(( VIT_MAX/2) * sens);
         start_time = millis();
         etat_mouvement = 1;
     }
@@ -163,42 +254,8 @@ void Mouvement::ligneDroite(float distance, float dt){//En mm
     }
 }
 
-void Mouvement::rotation(float angle, float dt){//En degres
-    static char etat_mouvement = 0; 
-    static float degreeEn1Sec = 135., coef = 1./degreeEn1Sec;
-    static float waitTime = 1., sens = 1;
-    // angle = LARGEUR_ROBOT * PI * RESOLUTION_ROUE_CODEUSE * angle / (360 * PERIMETRE_ROUE)//En tick d'encodeurs
-    switch (etat_mouvement)
-    {
-    case 0:
-    {
-        waitTime = angle * coef;
-        if(angle < 0){sens = -1;}
-        else{sens = 1;}
-        write_PWMD((-VIT_MAX/2) * sens);
-        write_PWMG((VIT_MAX/2)  * sens);
-        start_time = millis();
-        etat_mouvement = 1;
-    }
-    break;
-    case 1:
-    {
-        if(dt>waitTime){
-            etat_mouvement = 2;
-        }
-    }
-    break;
-    case 2:
-    {
-        write_PWMD(0);
-        write_PWMG(0);
-        finMvtElem = true;
-        etat_mouvement = 0;
-    }
-    break;
-    default:
-        break;
-    }
+Position Mouvement::getPosition(){
+    return pos_;
 }
 
 bool Mouvement::TempsEchantionnage(uint16_t TIME)

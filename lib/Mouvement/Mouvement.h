@@ -8,15 +8,17 @@
 #define TYPE_MOUVEMENT_SUIVANT 10
 
 #define RESOLUTION_ROUE_CODEUSE 909.7
-#define DIAMETRE_ROUE (39./1000.)
-#define PERIMETRE_ROUE (PI*DIAMETRE_ROUE)
-#define LARGEUR_ROBOT (98./1000.)
+#define DIAMETRE_ROUE (39./1000.)//en metre
+#define PERIMETRE_ROUE (PI*DIAMETRE_ROUE)//en metre
+#define LARGEUR_ROBOT (98./1000.)//en metre
 
 #define TE_10MS 10
 #define TE (TE_10MS*0.001)
 
+using FuncType = float (*)(float);
+
 struct Position {
-  float x{}, y{}, a{};
+  float x, y, theta;
 };
 
 typedef struct ligneDroite
@@ -50,6 +52,8 @@ public:
 
     float getDistance(const Position &p1, const Position &p2);
 
+    Position getPosition();
+
     Ordre_deplacement liste;//Position x y et theta en interne utilisées en ticks d'encodeurs !
     float next_action;
 private:
@@ -61,11 +65,18 @@ private:
     Asservissement *motorD_;
     Asservissement *motorG_;
 
-    float x_pos, y_pos, theta_pos;
+    Position pos_;
     bool finMvtElem;
 
     void calcul();
     void Odometrie();
     bool TempsEchantionnage(uint16_t TIME);
+    
+
+    FuncType traj;
+    FuncType trajRotation;
+    Asservissement PID;
+    FuncType fnVitesse2(float distance);
+    float trajectoire(float time, FuncType velocityProfile);
 };
 
