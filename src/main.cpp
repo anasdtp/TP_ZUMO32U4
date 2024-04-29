@@ -1,12 +1,14 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <Zumo32U4.h>
-#include <Mouvement.h>
+// #include <Mouvement.h>
+#include <Affichage.h>
+// #include <Capteurs.h>
 
 #define TYPE_MOUVEMENT_CARRE 55
 #define TYPE_MOUVEMENT_TRIANGLE 66
 
-float Kp = 0.25, Ki = 0.0009, Kd = 0.;
+float Kp = 0.1, Ki = 0.000, Kd = 0.0;
 Asservissement *motorD;
 Asservissement *motorG;
 
@@ -19,12 +21,24 @@ typedef struct FIGURE{
 
 FIGURE fig;
 
-Zumo32U4LCD display;
 
 Zumo32U4IMU imu;
+Affichage affichage;
+// Capteurs capteur;
 
 char report[120];
 
+void Sensors()
+{
+  static unsigned long lastSampleTime = 0;
+
+  if ((millis() - lastSampleTime) >= 2000)
+  {
+    lastSampleTime = millis();
+
+    // capteur.printValeurCapteurs(capteur.readSensors());
+  }
+}
 
 void mvt_ligneDroite(int centimetre);
 void mvt_rotation(int degree);
@@ -60,7 +74,12 @@ void setup() {
   motorG = new Asservissement(Kp, Ki, Kd);
   mvt = new Mouvement(motorD, motorG);
   
+  affichage.begin();
+
+  mvt->liste.type = TYPE_DEPLACEMENT_SUIVIE_LIGNE;
+  // capteur.begin();
   // ligneDroite(5);
+  // mvt_ligneDroite(20);
   // mvt_rotation(90);
   // figure_carre(10);
   // figure_triangle(10);
@@ -74,9 +93,11 @@ void loop() {
 
   clignotementLeds(true, true, true);
 
-  AffichageLed(mvt->getPosition());
+  affichage.afficher(mvt->getPosition());
 
-  CentraleInertielle();
+  // CentraleInertielle();
+
+  // Sensors();
 }
 
 void mvt_ligneDroite(int centimetre){
@@ -197,40 +218,6 @@ void clignotementLeds(bool yellow, bool red, bool green){
   }
 }
 
-void AffichageLed(Position position){
-  static unsigned long startMs = 0, tempsMs = 500;
-  static Position pastPosition;
-  if((millis() - startMs)>=(tempsMs)){
-    // startMs = millis();
-    if(pastPosition.x!=position.x || pastPosition.y!=position.y || pastPosition.theta!=position.theta){
-      pastPosition.x = position.x;
-      pastPosition.y = position.y;
-      pastPosition.theta = position.theta;
-        // Clear the screen
-      display.clear();
-      // Print a string
-      display.print("x : ");
-      // Print a number
-      display.print(int(position.x*100.));
-      // Go to the next line
-      display.gotoXY(0, 1);
-      display.print("y : ");
-      // Print a number
-      display.print(int(position.y*100.));
-      // Go to the next line
-      // display.gotoXY(0, 2);
-      // display.print("t : ");
-      // // Print a number
-      // display.print(position.theta);
-    }
-    // Serial.println(position.x);
-    // Serial.println(position.y);
-    // Serial.println(position.theta*180./M_PI);//EN degrés
-    // Serial.println("");
-    startMs = millis();  
-  }
-}
-
 void CentraleInertielle(){
   static unsigned long startMs = 0, tempsMs = 100;
   if((millis() - startMs)>=(tempsMs)){
@@ -274,3 +261,5 @@ void CentraleInertielle(){
     startMs = millis();
   }
 }
+
+

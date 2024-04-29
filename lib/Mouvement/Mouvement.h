@@ -1,14 +1,16 @@
 #include <Arduino.h>
 #include <Motors.h>
 #include <Asservissement.h>
+#include <Capteurs.h>
   
 #define TYPE_DEPLACEMENT_IMMOBILE 0         
 #define TYPE_DEPLACEMENT_LIGNE_DROITE 1
 #define TYPE_DEPLACEMENT_ROTATION 2
+#define TYPE_DEPLACEMENT_SUIVIE_LIGNE 3
 #define TYPE_MOUVEMENT_SUIVANT 10
 
 #define RESOLUTION_ROUE_CODEUSE 909.7
-#define DIAMETRE_ROUE (39./1000.)//en metre
+#define DIAMETRE_ROUE (30.95/1000.)//en metre
 #define PERIMETRE_ROUE (PI*DIAMETRE_ROUE)//en metre
 #define LARGEUR_ROBOT (98./1000.)//en metre
 
@@ -16,6 +18,7 @@
 #define TE (TE_10MS*0.001)
 
 using FuncType = float (*)(float);
+
 
 struct Position {
   float x, y, theta;
@@ -38,6 +41,8 @@ typedef struct Ordre_deplacement
     ligneDroite line;
     rotation Rotation;
 }Ordre_deplacement;
+
+
 
 class Mouvement
 {
@@ -65,6 +70,7 @@ private:
     Asservissement *motorD_;
     Asservissement *motorG_;
 
+
     Position pos_;
     bool finMvtElem;
 
@@ -76,6 +82,7 @@ private:
     FuncType traj;
     FuncType trajRotation;
     Asservissement PID;
+    Capteurs capt;
     FuncType fnVitesse2(float distance);
     float trajectoire(float time, FuncType velocityProfile);
 };

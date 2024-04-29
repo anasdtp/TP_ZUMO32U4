@@ -1,6 +1,6 @@
 #include "Mouvement.h"
 
-float acc_max = 0.85, v_max = 0.8, dcc_max = 0.8;
+float acc_max = 0.5, v_max = 0.5, dcc_max = 0.5;
 float ta = v_max / acc_max;
 float d_max = v_max * v_max / acc_max;
 float distance_;
@@ -51,6 +51,7 @@ Mouvement::Mouvement(Asservissement *motorD, Asservissement *motorG)
     resetCodeurD();
     resetCodeurG();
     pos_ = (Position){0,0,0};
+    // capteur = new(Capteurs);
     finMvtElem = false;
     next_action = false;
     liste.type = TYPE_MOUVEMENT_SUIVANT;
@@ -143,6 +144,21 @@ void Mouvement::calcul(){
         }
         
     }break;
+    case (TYPE_DEPLACEMENT_SUIVIE_LIGNE):
+    {
+        int vitesse = 1000;
+        ValeurCapteurs capteurs = capt.readSensors();
+        if (capteurs.LigneAvant > 0 || capteurs.LigneDroit > 0 || capteurs.LigneGauche > 0){
+            vitesse = 0;
+        }
+
+        cmdD = motorD_->AsserMot(posD+vitesse, posD, dt);
+        cmdG = motorG_->AsserMot(posG+vitesse, posG, dt);
+
+        write_PWMD(cmdD);
+        write_PWMG(cmdG);
+        
+    }break;
     default:
     {}break;
     }
@@ -199,6 +215,9 @@ void Mouvement::ligneDroite(float distance, float dt){//En mm
         // Generate trajectory based on desired position
         float trajectory = trajectoire(dt, traj);
         float error = trajectory + getDistance(pos_, targetPos);
+
+        cmdD = motorD_->AsserMot(error, posD, dt);
+        cmdG = motorG_->AsserMot(error, posG, dt);
     }
     break;
     case 2:
