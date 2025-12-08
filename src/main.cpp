@@ -41,34 +41,6 @@ void PID();
 unsigned char  Analyse(int *p);
 
 void setup() {
-  //Serial.begin(9600);
-  for(int i = 0; i<4; i++){
-    y = y+ (1.44e3/4);
-    z = z+ (6.3452e1/4);
-    yi = yi+i*5;
-    zi = zi+i*12;
-  }
- // y=1.34e2;
- // z=3.3452e3;
-  buttonB.waitForButton();
-  delay(800);
-  l1=micros();
-  xi=yi+zi;
-  l2=micros();
-  Serial.println(l2-l1);
-  l1=micros();
-  xi=yi*zi;
-  l2=micros();
-  Serial.println(l2-l1);
-  l1=micros();
-  xi=yi/zi;
-  l2=micros();
-  Serial.println(l2-l1);
-  while(1);
-}
-
-
-void oldsetup() {
 	Wire.begin(); //I2C 
 	buttonB.waitForButton(); // on attend d'appuyer sur le bouton B
 	delay(800); //attendre pour ne pas risquer de blaisser le doigt
@@ -93,7 +65,13 @@ void oldsetup() {
 
 int16_t positionl;
 int16_t lastError = 0;
+float integralError = 0;  // Somme cumulée des erreurs (terme intégral)
+const float MAX_INTEGRAL = 5000.0;  // Limite anti-windup pour l'intégrale
 
+// Paramètres PID
+float Kp = 0.25;  // Gain proportionnel (ajustable)
+float Ki = 0.0;   // Gain intégral (ajustable)
+float Kd = 6.0;   // Gain dérivé (ajustable)
 
 long ll,lastll;
 long distdroit,distgauche;
@@ -112,10 +90,11 @@ void loop(){
 			distgauche = distgauche + encoders.getCountsAndResetLeft();
 
 			if(((sens_stat&0x0E)!=0) && ((sens_stat&0x11)==0)){
-					PID(); //suivi de ligne noire
+					PID(); //suivi de ligne noire avec PID complet
 			}else{
-				// arreter des moteurs donc ne plus avancer
-					motors.setSpeeds(0, 0);
+				// Ligne perdue - arrêter les moteurs et réinitialiser l'intégrale
+				motors.setSpeeds(0, 0);
+				integralError = 0;  // Reset de l'intégrale pour éviter l'accumulation
 			}
 	}
 }
@@ -158,29 +137,59 @@ void calibrateSensors2() {
 	turncalibrate(2); // +90 pour revenir su rla ligne
 }
 
-// Fonction PID pour maintenir le robot sur la ligne
-// avec suivi de la ligne
+// Fonction PID complète pour maintenir le robot sur la ligne
+// Implémentation d'un vrai contrôleur PID avec P + I + D
 void PID(){
-	// Our "error" is how far we are away from the center of the
-	// line, which corresponds to position 2000 done il loop function.
+	// L'erreur est la distance par rapport au centre de la ligne
+	// position 2000 = centré, donc erreur = positionl (déjà décalé de 2000 dans loop)
 	int16_t error = positionl;
-	int16_t speedDifference = error / 4 + 6 * (error - lastError);
+	
+	// ===== TERME PROPORTIONNEL (P) =====
+	// Réagit à l'erreur actuelle
+	float proportional = Kp * error;
+	
+	// ===== TERME INTÉGRAL (I) =====
+	// Accumule les erreurs passées pour corriger les biais systématiques
+	integralError += error;
+	
+	// Anti-windup: limiter l'accumulation de l'intégrale
+	if (integralError > MAX_INTEGRAL) {
+		integralError = MAX_INTEGRAL;
+	} else if (integralError < -MAX_INTEGRAL) {
+		integralError = -MAX_INTEGRAL;
+	}
+	
+	float integral = Ki * integralError;
+	
+	// ===== TERME DÉRIVÉ (D) =====
+	// Réagit au taux de changement de l'erreur (anticipation)
+	int16_t derivative_error = error - lastError;
+	float derivative = Kd * derivative_error;
+	
+	// ===== CALCUL DE LA COMMANDE PID =====
+	// Correction totale = P + I + D
+	float pidOutput = proportional + integral + derivative;
+	
+	// La différence de vitesse détermine la correction de trajectoire
+	int16_t speedDifference = (int16_t)pidOutput;
+	
+	// Sauvegarder l'erreur pour le prochain cycle
 	lastError = error;
-
-	// Get individual motor speeds.  The sign of speedDifference
-	// determines if the robot turns left or right.
+	
+	// ===== APPLICATION AUX MOTEURS =====
+	// Vitesse de base pour les deux moteurs
+	// Le signe de speedDifference détermine si on tourne à gauche ou à droite
 	int16_t leftSpeed = (int16_t)maxSpeed + speedDifference;
 	int16_t rightSpeed = (int16_t)maxSpeed - speedDifference;
-
-	// Constrain our motor speeds to be between 0 and maxSpeed.
-	// One motor will always be turning at maxSpeed, and the other
-	// will be at maxSpeed-|speedDifference| if that is positive,
-	// else it will be stationary.  For some applications, you
-	// might want to allow the motor speed to go negative so that
-	// it can spin in reverse.
+	
+	// Contraindre les vitesses entre 0 et maxSpeed
+	// Pour un suivi plus agressif, on pourrait permettre des vitesses négatives
+	// leftSpeed = constrain(leftSpeed, -maxSpeed, (int16_t)maxSpeed);
+	// rightSpeed = constrain(rightSpeed, -maxSpeed, (int16_t)maxSpeed);
 	leftSpeed = constrain(leftSpeed, 0, (int16_t)maxSpeed);
 	rightSpeed = constrain(rightSpeed, 0, (int16_t)maxSpeed);
-	// mettre à jour les valeurs de commandes moteurs
+	
+	// Appliquer les commandes aux moteurs
 	motors.setSpeeds(leftSpeed, rightSpeed);
 }
 
@@ -188,7 +197,7 @@ void PID(){
 // retourne un char contenant  5 bitset
 // chaque bit représente un capteur
 // 0 pas de ligne noire, 1 ligne noire détectée
-unsigned char  Analyse(int *p){
+unsigned char  Analyse(unsigned int *p){
 	unsigned char i;
 	unsigned char ret=0;
 	for(i=0;i<5;i++){
