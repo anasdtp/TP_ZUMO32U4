@@ -146,16 +146,16 @@ void turncalibrate(short nbangle45){
 // Fonction pour effectuer la rotation 90° à gaucher et à droite 
 // de la ligne pour effectuer le calibrage des 5 capteurs sol
 void calibrateSensors2() { 
-	const uint16_t calibrationSpeed = 160;
+	const uint16_t calibrationSpeed = 160; // valeur piphométrique de la vitesse de rotation
 	// Wait 0.1 second and then begin automatic sensor calibration
 	// by rotating in place to sweep the sensors over the line
 	delay(100);
 	lineSensors.calibrate();
 	// Turn to the left 90 degrees.
 	// on remet à chaque fois la variable angle à 0
-	turncalibrate(2);  //+90°
-	turncalibrate(-4);  // -180
-	turncalibrate(2); // +90 pour revenir su rla ligne
+	turncalibrate(2);  //+90° (val multiple de 45°) gauche
+	turncalibrate(-4);  // -180 droite
+	turncalibrate(2); // +90 pour revenir su rla ligne gauche
 }
 
 // Fonction PID pour maintenir le robot sur la ligne
@@ -204,3 +204,11 @@ unsigned char  Analyse(int *p){
 	} 
 	return ret;      
 }
+/*Procedure bluetooth
+1- robot off
+2- choisir un nom de 5 à 7 caractères max
+3- introduire une config au robot 
+4- appuyer sur le bouton Blutooth
+pendant l'appui la 2 eme personne alume le robot (le branche )
+on reste appuyer jusqu'à la led bleu clignote lentement
+5- relacher le bouton Bluetooth
