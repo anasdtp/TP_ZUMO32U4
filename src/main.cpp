@@ -95,9 +95,11 @@ int16_t lastError = 0;
 void PID_gyro(){
 	// captick angle relatif du robot par rapport à 
   // saposition initiale
-  turnSensorUpdate(); 
-  int32_t error= turnAngle;
-	int16_t speedDifference = (error*500)/2982616 ;
+	int32_t angle= turnSensorUpdate(); 
+	// Serial1.print("angle: ");
+	// Serial1.println(angle);
+	int32_t error = angle; // on veut être à angle 0
+	int16_t speedDifference = error/130000 ;
 	//+ 6 * (error - lastError);
 	lastError = error;
 
@@ -112,8 +114,8 @@ void PID_gyro(){
 	// else it will be stationary.  For some applications, you
 	// might want to allow the motor speed to go negative so that
 	// it can spin in reverse.
-	leftSpeed = constrain(leftSpeed, 0, (int16_t)maxSpeed);
-	rightSpeed = constrain(rightSpeed, 0, (int16_t)maxSpeed);
+	leftSpeed = constrain(leftSpeed, (int16_t)-maxSpeed, (int16_t)maxSpeed);
+	rightSpeed = constrain(rightSpeed, (int16_t)-maxSpeed, (int16_t)maxSpeed);
 	// mettre à jour les valeurs de commandes moteurs
 	motors.setSpeeds(leftSpeed, rightSpeed);
 }
@@ -121,17 +123,29 @@ void PID_gyro(){
 
 long ll,lastll;
 long distdroit,distgauche;
+uint16_t index=0;
+uint32_t l3, tabl1[200], tabl3[200];
 // Fonction LOOP exécutée à l'infini
 //
 void loop(){
-	
 	ll=micros();
-	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire                  
+	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire   
 			lastll=ll;
-      PID_gyro();
+      		PID_gyro();
 			// calculer le deplacement des 2 roues
 			distdroit = distdroit + encoders.getCountsAndResetRight();
 			distgauche = distgauche + encoders.getCountsAndResetLeft();
-
+			l3=micros();
+			tabl1[index]=ll;
+			tabl3[index]=l3;
+			index++;
+			if(index>=200){
+				motors.setSpeeds(0,0); // arret des moteurs
+				for(index=0;index<200;index++){
+					Serial1.print(tabl1[index]);Serial1.print(" ");
+					Serial1.println(tabl3[index]);
+				}
+				while(1);
 	}
+}
 }
