@@ -66,7 +66,7 @@ void calibrateSensors2() {
 // STEUP initialisations
 //****************************************************
 void setup() {
-	Serial1.begin(38400);
+  Serial1.begin(38400);
 	Wire.begin(); //I2C 
 	buttonB.waitForButton(); // on attend d'appuyer sur le bouton B
 	delay(800); //attendre pour ne pas risquer de blaisser le doigt
@@ -90,22 +90,21 @@ void setup() {
 
 int16_t positionl;
 int16_t lastError = 0;
-// Fonction PID pour maintenir le robot sur un cap cst
+// Fonction PID pour maintenir le robot sur cap constant
 // cap initial
 void PID_gyro(){
-	// Our "error" is how far we are away from the center of the
-	// line, which corresponds to position 2000 done il loop function.
-	//captick angle initialrelatif du robot par rapporr a sa position intiale
-	turnSensorUpdate();
-	uint16_t  error = turnAngle;
-	uint16_t speedDifference = (error * 100) / 2982612;
-
+	// captick angle relatif du robot par rapport à 
+  // saposition initiale
+  turnSensorUpdate(); 
+  int32_t error= turnAngle;
+	int16_t speedDifference = (error*500)/2982616 ;
 	//+ 6 * (error - lastError);
 	lastError = error;
+
 	// Get individual motor speeds.  The sign of speedDifference
 	// determines if the robot turns left or right.
-	int16_t leftSpeed = (int16_t)150 + speedDifference;
-	int16_t rightSpeed = (int16_t)150 - speedDifference;
+	int16_t leftSpeed = (int16_t)250 + speedDifference;
+	int16_t rightSpeed = (int16_t)250 - speedDifference;
 
 	// Constrain our motor speeds to be between 0 and maxSpeed.
 	// One motor will always be turning at maxSpeed, and the other
@@ -120,19 +119,19 @@ void PID_gyro(){
 }
 
 
-
 long ll,lastll;
 long distdroit,distgauche;
 // Fonction LOOP exécutée à l'infini
 //
 void loop(){
-
+	
 	ll=micros();
 	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire                  
 			lastll=ll;
-			PID_gyro();
+      PID_gyro();
 			// calculer le deplacement des 2 roues
 			distdroit = distdroit + encoders.getCountsAndResetRight();
 			distgauche = distgauche + encoders.getCountsAndResetLeft();
+
 	}
 }

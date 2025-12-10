@@ -78,7 +78,7 @@ void turnSensorReset()
 
 // Read the gyro and update the angle.  This should be called as
 // frequently as possible while using the gyro to do turns.
-void turnSensorUpdate()
+int32_t turnSensorUpdate()
 {
   // Read the measurements from the gyro.
   imu.readGyro();
@@ -103,4 +103,5 @@ void turnSensorUpdate()
   // (0.07 dps/digit) * (1/1000000 s/us) * (2^27/45 unit/degree)
   // = 14680064/17578125 unit/(digit*us)
   turnAngle += ((int64_t)d * 3670016) /17578125; //14680064 / 17578125;
+  return turnAngle;
 }
