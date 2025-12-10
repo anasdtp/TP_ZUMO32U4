@@ -1,293 +1,151 @@
-#include "Mouvement.h"
+// /*This demo requires a Zumo 32U4 
+// *** Configuration :  
+// 	5 capteur de lignes donc vérifier que les 2 cavaliers sur la carte capteurs sont bien surla position interieure
+// */
 
-float acc_max = 0.5, v_max = 0.5, dcc_max = 0.5;
-float ta = v_max / acc_max;
-float d_max = v_max * v_max / acc_max;
-float distance_;
-FuncType Mouvement::fnVitesse2(float distance)
-{
-    distance_ = distance;
-    if (distance < d_max)
-    {
-        return static_cast<FuncType>([](float time) -> float
-        {
-            float time_lim = sqrt(distance_ / acc_max);
-            if (time < time_lim)
-                return acc_max * time;
-            else
-                return v_max - acc_max * (time - time_lim);
-        });
-    }
-    else
-    {
-        return static_cast<FuncType>([](float time) -> float
-        {
-            float tc = (distance_ - d_max) / v_max;
-            if (time < ta)
-                return acc_max * time;
-            else if (time >= ta && time <= tc + ta)
-                return v_max;
-            else
-                return v_max - acc_max * (time - ta - tc);
-        });
-    }
-}
+// #include <Wire.h>
+// #include <Zumo32U4.h>
+// #include "gyro_use.h"
+// #include <math.h>
 
-float Mouvement::trajectoire(float time, FuncType velocityProfile)
-{
-    float trajectory = 0.0;
-    for (float t = 0.0; t <= time; t += time)
-    {
-        trajectory += velocityProfile(t) * time;
-    }
+// // This is the maximum speed the motors will be allowed to turn.
+// // A maxSpeed of 400 lets the motors go at top speed.  Decrease
+// // this value to impose a speed limit.
+// const uint16_t maxSpeed = 400;
 
-    return trajectory;
-}
-
-Mouvement::Mouvement(Asservissement *motorD, Asservissement *motorG)
-{
-    motorD_ = motorD;
-    motorG_ = motorG;
-    resetCodeurD();
-    resetCodeurG();
-    pos_ = (Position){0,0,0};
-    // capteur = new(Capteurs);
-    finMvtElem = false;
-    next_action = false;
-    liste.type = TYPE_MOUVEMENT_SUIVANT;
-    start_time = millis();
-}
-
-Mouvement::~Mouvement()
-{
-    // delete motorD_;
-    // delete motorG_;
-}
+// Zumo32U4Buzzer buzzer;
+// Zumo32U4LineSensors lineSensors;
+// Zumo32U4Motors motors;
+// Zumo32U4ButtonB buttonB;
+// Zumo32U4Encoders encoders;
+// Zumo32U4IMU imu;
 
 
+// // tableau pour récupérer les valeurs des 5 capteurs sol
+// #define NUM_SENSORS 5
+// unsigned int lineSensorValues[NUM_SENSORS];
+
+// //******** Fonction de rotation suivant le gyro
+// void turncalibrate(short nbangle45){
+// 	// nbangle45 représente le nombre de fois 45°
+// 	// positif = sens trigo
+// 	int16_t speedgauche = 160*(nbangle45>0 ? -1 :1);
+// 	// lancer la rentation suivant le signe de nbangle45
+// 	// on tourne sur place
+// 	motors.setSpeeds(speedgauche,-speedgauche);
+// 	turnSensorReset(); // initialiser l'angle du gyro "turnAgle"
+// 	int32_t angleC = turnAngle45 *nbangle45;
+// 	while((nbangle45>=0 ? turnAngle < angleC :turnAngle >= angleC )){
+// 			// calibrer les capteurs sol
+// 			  lineSensors.calibrate();
+// 			// mettre à jour le calcul de l'angle gyro
+// 			  turnSensorUpdate();
+// 	}
+// 	// arret moteurs
+// 	motors.setSpeeds(0, 0);
+// 	// dernier mise à jour integration angle Gyro
+// 	turnSensorUpdate();
+// }
+
+// // Fonction pour effectuer la rotation 90° à gaucher et à droite 
+// // de la ligne pour effectuer le calibrage des 5 capteurs sol
+// void calibrateSensors2() { 
+// 	const uint16_t calibrationSpeed = 160;
+// 	// Wait 0.1 second and then begin automatic sensor calibration
+// 	// by rotating in place to sweep the sensors over the line
+// 	delay(100);
+// 	lineSensors.calibrate();
+// 	// Turn to the left 90 degrees.
+// 	// on remet à chaque fois la variable angle à 0
+// 	turncalibrate(2);  //+90°
+// 	turncalibrate(-4);  // -180
+// 	turncalibrate(2); // +90 pour revenir su rla ligne
+// }
+
+// //*****************************************************
+// // STEUP initialisations
+// //****************************************************
+// void setup() {
+//   Serial1.begin(38400);
+// 	Wire.begin(); //I2C 
+// 	buttonB.waitForButton(); // on attend d'appuyer sur le bouton B
+// 	delay(800); //attendre pour ne pas risquer de blaisser le doigt
+// 	lineSensors.initFiveSensors(); //config  5capteurs sol
+// 	if(!imu.init()){  //initialisation de la centrale inertielle
+// 		ledRed(1);  // si erreur allumer led Rouge
+// 		while(1); //on ne va pas plus loin vu qu'il y a erreur
+// 	}
+// 	imu.enableDefault(); //initialiser centrale Imu par défaut
+// 	imu.configureForTurnSensing(); // sensibilité maximale
+
+// 	turnSensorSetup(); // calcul offset du gyro
+
+// 	// Play music and wait for it to finish before we start driving.
+// 	buzzer.play("L16 cdegreg4"); //petite musique pour la route
+// 	while(buzzer.isPlaying());
+// 	// encodeurs de roue initialiser en lisant les valeurs
+// 	encoders.getCountsAndResetRight(); 
+// 	encoders.getCountsAndResetLeft();
+// }
+
+// int16_t positionl;
+// int16_t lastError = 0;
+// // Fonction PID pour maintenir le robot sur cap constant
+// // cap initial
+// void PID_gyro(){
+// 	// captick angle relatif du robot par rapport à 
+//   // saposition initiale
+// 	int32_t angle= turnSensorUpdate(); 
+// 	// Serial1.print("angle: ");
+// 	// Serial1.println(angle);
+// 	int32_t error = angle; // on veut être à angle 0
+// 	int16_t speedDifference = error/130000 ;
+// 	//+ 6 * (error - lastError);
+// 	lastError = error;
+
+// 	// Get individual motor speeds.  The sign of speedDifference
+// 	// determines if the robot turns left or right.
+// 	int16_t leftSpeed = (int16_t)250 + speedDifference;
+// 	int16_t rightSpeed = (int16_t)250 - speedDifference;
+
+// 	// Constrain our motor speeds to be between 0 and maxSpeed.
+// 	// One motor will always be turning at maxSpeed, and the other
+// 	// will be at maxSpeed-|speedDifference| if that is positive,
+// 	// else it will be stationary.  For some applications, you
+// 	// might want to allow the motor speed to go negative so that
+// 	// it can spin in reverse.
+// 	leftSpeed = constrain(leftSpeed, (int16_t)-maxSpeed, (int16_t)maxSpeed);
+// 	rightSpeed = constrain(rightSpeed, (int16_t)-maxSpeed, (int16_t)maxSpeed);
+// 	// mettre à jour les valeurs de commandes moteurs
+// 	motors.setSpeeds(leftSpeed, rightSpeed);
+// }
 
 
-
-void Mouvement::loop()
-{
-    if (TempsEchantionnage(TE_10MS))
-    {
-        calcul();
-    }
-}
-
-void Mouvement::Odometrie(){
-    static float deltaDist, ang, init = true;
-    if(init){init = false; resetCodeurD(); resetCodeurG();}
-
-    posD = lireCodeurD()*1.;
-    posG = lireCodeurG()*1.;
-
-    deltaDist = 0.5*((posD - pastPosD) + (posG - pastPosG));
-
-    //Calcul de la valeur de l'angle parcouru
-    // ang = (((posD - pastPosD) - (posG - pastPosG))*PERIMETRE_ROUE*1800.0/(LARGEUR_ROBOT*M_PI*RESOLUTION_ROUE_CODEUSE));
-    ang = ((posD - pastPosD) - (posG - pastPosG))*PI/1800.0;
-    
-    //Determination de la position sur le terrain en X, Y, Theta
-    pos_.theta +=  (ang);  //en radians
-    pos_.x += deltaDist*cos((double)(pos_.theta))*PERIMETRE_ROUE/RESOLUTION_ROUE_CODEUSE; //En metres
-    pos_.y += deltaDist*sin((double)(pos_.theta))*PERIMETRE_ROUE/RESOLUTION_ROUE_CODEUSE; //En metres
-
-    pastPosD = posD;
-    pastPosG = posG;
-    // Serial.println(pos_.x);
-    // Serial.println(pos_.y);
-    // Serial.println(pos_.theta*180./PI);//EN de
-    // Serial.println("");
-}
-
-void Mouvement::calcul(){
-    float dt = (millis() - start_time) * 0.001f;//En seconde
-
-    Odometrie();
-
-    switch (liste.type)
-    {
-    case (TYPE_DEPLACEMENT_IMMOBILE):
-    {
-        // posD = lireCodeurD();
-        // posG = lireCodeurG();
-        cmdD = motorD_->AsserMot(0, posD, dt);
-        cmdG = motorG_->AsserMot(0, posG, dt);
-        write_PWMD(cmdD);
-        write_PWMG(cmdG);
-        start_time = millis(); 
-    }break;
-    case (TYPE_DEPLACEMENT_LIGNE_DROITE):
-    {
-        ligneDroite(liste.line.distance, dt);
-        if (finMvtElem)
-        {
-            finMvtElem = false;
-            Serial.println("finMvtElem");
-            liste.type = (TYPE_MOUVEMENT_SUIVANT);
-            // etat_automate_depl = INITIALISATION;
-
-            next_action = true;
-        }
-    }break;
-    case (TYPE_DEPLACEMENT_ROTATION):
-    {
-        rotation(liste.Rotation.degree, dt);
-        if (finMvtElem)
-        {
-            liste.type = (TYPE_MOUVEMENT_SUIVANT);
-            // etat_automate_depl = INITIALISATION;
-            finMvtElem = false;
-            next_action = true;
-        }
-        
-    }break;
-    case (TYPE_DEPLACEMENT_SUIVIE_LIGNE):
-    {
-        int vitesse = 1000;
-        ValeurCapteurs capteurs = capt.readSensors();
-        if (capteurs.LigneAvant > 0 || capteurs.LigneDroit > 0 || capteurs.LigneGauche > 0){
-            vitesse = 0;
-        }
-
-        cmdD = motorD_->AsserMot(posD+vitesse, posD, dt);
-        cmdG = motorG_->AsserMot(posG+vitesse, posG, dt);
-
-        write_PWMD(cmdD);
-        write_PWMG(cmdG);
-        
-    }break;
-    default:
-    {}break;
-    }
-
-    if (liste.type == TYPE_MOUVEMENT_SUIVANT)
-    {
-
-            // Remise a zero des variables
-            // etat_automate_depl = INITIALISATION;
-            // On reset la position du robot pour la prochaine action
-            resetCodeurD();
-            resetCodeurG();
-            start_time = millis();
-            // on prévoit de s'asservir sur la position atteinte
-            liste.type = TYPE_DEPLACEMENT_IMMOBILE;
-    }
-}
-
-float Mouvement::getDistance(const Position &p1, const Position &p2)
-{
-    return sqrt(pow((p1.x - p2.x), 2) + pow((p1.y - p2.y), 2));
-}
-
-
-bool Mouvement::nextActionPossible(){
-    if(next_action){
-        next_action = false;
-        return true;
-    }
-    return false;
-}
-
-void Mouvement::ligneDroite(float distance, float dt){//En mm
-    static char etat_mouvement = 0; 
-    static float cmdD = 0., cmdG = 0.;
-    static Position targetPos;
-    // float dist = (distance * RESOLUTION_ROUE_CODEUSE) / PERIMETRE_ROUE;//En tick d'encodeurs
-    switch (etat_mouvement)
-    {
-    case 0:
-    {
-        traj = fnVitesse2(distance);
-
-        targetPos.theta = pos_.theta;
-        targetPos.x = pos_.x + distance*cos(targetPos.theta);
-        targetPos.y = pos_.y + distance*sin(targetPos.theta);
-
-        start_time = millis();
-        etat_mouvement = 1;
-    }
-    break;
-    case 1:
-    {
-        // Generate trajectory based on desired position
-        float trajectory = trajectoire(dt, traj);
-        float error = trajectory + getDistance(pos_, targetPos);
-
-        cmdD = motorD_->AsserMot(error, posD, dt);
-        cmdG = motorG_->AsserMot(error, posG, dt);
-    }
-    break;
-    case 2:
-    {
-        
-        finMvtElem = true;
-        etat_mouvement = 0;
-    }
-    break;
-    default:
-        break;
-    }
-
-    write_PWMD(cmdD);
-    write_PWMG(cmdG);
-}
-
-void Mouvement::rotation(float angle, float dt){//En degres
-    static char etat_mouvement = 0; 
-    static float degreeEn1Sec = 135., coef = 1./degreeEn1Sec;
-    static float waitTime = 1., sens = 1;
-    // angle = LARGEUR_ROBOT * PI * RESOLUTION_ROUE_CODEUSE * angle / (360 * PERIMETRE_ROUE)//En tick d'encodeurs
-    switch (etat_mouvement)
-    {
-    case 0:
-    {
-        waitTime = angle * coef;
-        if(angle < 0){sens = -1;}
-        else{sens = 1;}
-        write_PWMD((-VIT_MAX/2) * sens);
-        write_PWMG(( VIT_MAX/2) * sens);
-        start_time = millis();
-        etat_mouvement = 1;
-    }
-    break;
-    case 1:
-    {
-        if(dt>waitTime){
-            etat_mouvement = 2;
-        }
-    }
-    break;
-    case 2:
-    {
-        write_PWMD(0);
-        write_PWMG(0);
-        finMvtElem = true;
-        etat_mouvement = 0;
-    }
-    break;
-    default:
-        break;
-    }
-}
-
-Position Mouvement::getPosition(){
-    return pos_;
-}
-
-bool Mouvement::TempsEchantionnage(uint16_t TIME)
-{
-    static uint32_t LastMscount = millis();
-    if ((millis() - LastMscount) >= TIME)
-    {
-        LastMscount = millis();
-        return true;
-    }
-    else
-    {
-        return false;
-    }   
-}
-
+// long ll,lastll;
+// long distdroit,distgauche;
+// uint16_t index=0;
+// uint32_t l3, tabl1[200], tabl3[200];
+// // Fonction LOOP exécutée à l'infini
+// //
+// void loop(){
+// 	ll=micros();
+// 	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire   
+// 			lastll=ll;
+//       		PID_gyro();
+// 			// calculer le deplacement des 2 roues
+// 			distdroit = distdroit + encoders.getCountsAndResetRight();
+// 			distgauche = distgauche + encoders.getCountsAndResetLeft();
+// 			l3=micros();
+// 			tabl1[index]=ll;
+// 			tabl3[index]=l3;
+// 			index++;
+// 			if(index>=200){
+// 				motors.setSpeeds(0,0); // arret des moteurs
+// 				for(index=0;index<200;index++){
+// 					Serial1.print(tabl1[index]);Serial1.print(" ");
+// 					Serial1.println(tabl3[index]);
+// 				}
+// 				while(1);
+// 	}
+// }
+// }
