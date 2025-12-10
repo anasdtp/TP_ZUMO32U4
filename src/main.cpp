@@ -65,9 +65,8 @@ void calibrateSensors2() {
 //*****************************************************
 // STEUP initialisations
 //****************************************************
-
 void setup() {
-  Serial1.begin(38400);
+	Serial1.begin(38400);
 	Wire.begin(); //I2C 
 	buttonB.waitForButton(); // on attend d'appuyer sur le bouton B
 	delay(800); //attendre pour ne pas risquer de blaisser le doigt
@@ -80,7 +79,6 @@ void setup() {
 	imu.configureForTurnSensing(); // sensibilité maximale
 
 	turnSensorSetup(); // calcul offset du gyro
-//	calibrateSensors2(); // fonction pour calibrer les capteurs sol
 
 	// Play music and wait for it to finish before we start driving.
 	buzzer.play("L16 cdegreg4"); //petite musique pour la route
@@ -92,19 +90,22 @@ void setup() {
 
 int16_t positionl;
 int16_t lastError = 0;
-// Fonction PID pour maintenir le robot sur la ligne
-// avec suivi de la ligne
-void PID(){
+// Fonction PID pour maintenir le robot sur un cap cst
+// cap initial
+void PID_gyro(){
 	// Our "error" is how far we are away from the center of the
 	// line, which corresponds to position 2000 done il loop function.
-	int16_t error = positionl;
-	int16_t speedDifference = error / 4 + 6 * (error - lastError);
-	lastError = error;
+	//captick angle initialrelatif du robot par rapporr a sa position intiale
+	turnSensorUpdate();
+	uint16_t  error = turnAngle;
+	uint16_t speedDifference = (error * 100) / 2982612;
 
+	//+ 6 * (error - lastError);
+	lastError = error;
 	// Get individual motor speeds.  The sign of speedDifference
 	// determines if the robot turns left or right.
-	int16_t leftSpeed = (int16_t)maxSpeed + speedDifference;
-	int16_t rightSpeed = (int16_t)maxSpeed - speedDifference;
+	int16_t leftSpeed = (int16_t)150 + speedDifference;
+	int16_t rightSpeed = (int16_t)150 - speedDifference;
 
 	// Constrain our motor speeds to be between 0 and maxSpeed.
 	// One motor will always be turning at maxSpeed, and the other
@@ -118,109 +119,20 @@ void PID(){
 	motors.setSpeeds(leftSpeed, rightSpeed);
 }
 
-// analyser les données capteur sol
-// retourne un char contenant  5 bitset
-// chaque bit représente un capteur
-// 0 pas de ligne noire, 1 ligne noire détectée
-unsigned char  Analyse(int *p){
-	unsigned char i;
-	unsigned char ret=0;
-	for(i=0;i<5;i++){
-		ret=ret<<1;
-		// on calcul un seil de décision pour dire que c'est blanc 0 ou noir 1
-		// si le capteur est supérier à un seil alors c'est nor donc 1 sinon c'est blan 0
-		ret=ret+(p[i]>(lineSensors.calibratedMinimumOn[i]*2+
-						lineSensors.calibratedMaximumOn[i])/3 ? 1:0);
-		// variable ret va contenir 5 bits LSB utiles
-		//  les bits ret  ... b4 b3 b2 b1 b0
-		// chaque bit bi représente un capteur (b4 de gauche et b0 celui de droite)
-		// bi= 1 alors le capteur a déecté une ligne noire, sinon 0
-	} 
-	return ret;      
-}
 
 
-uint32_t ll,lastll;
+long ll,lastll;
 long distdroit,distgauche;
 // Fonction LOOP exécutée à l'infini
 //
-void oldloop(){
-	// Positionl nous done la osition du robot par rapport à la ligne noire au sol
-	positionl = lineSensors.readLine(lineSensorValues)-2000;
-	// extraire l'état des 5 capteurs sur 5 bits (1 il y a la piste noire sinon 0
-	char sens_stat=Analyse(lineSensorValues);
+void loop(){
+
 	ll=micros();
 	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire                  
 			lastll=ll;
+			PID_gyro();
 			// calculer le deplacement des 2 roues
 			distdroit = distdroit + encoders.getCountsAndResetRight();
 			distgauche = distgauche + encoders.getCountsAndResetLeft();
-
-			if(((sens_stat&0x0E)!=0) && ((sens_stat&0x11)==0)){
-					PID(); //suivi de ligne noire
-			}else{
-				// arreter des moteurs donc ne plus avancer
-					motors.setSpeeds(0, 0);
-			}
 	}
-}
-
-char motoron;
-int32_t dmax;
-uint8_t incomingByte;
-uint32_t tab[200];
-uint16_t indx=0;
-
-void loop(){
-	
-   if(Serial1.available()){
-            incomingByte = Serial1.read();
-            Serial1.print(incomingByte,HEX);Serial1.println("**********************");
-            switch(incomingByte&0xFF){                  
-                  case '1':
-                  case '2':
-                  case '3':
-                        Serial1.println("&&&&&&&&&&&&&&&&&&");
-                          dmax= (incomingByte&0x0F)*377;
-                            // encodeurs de roue initialiser en lisant les valeurs
-                          encoders.getCountsAndResetRight(); 
-                          encoders.getCountsAndResetLeft();
-                          distdroit=0;
-                          distgauche=0;
-						  int16_t speed= 150;
-                          motors.setSpeeds(speed, speed - (speed*5)/100);
-                          motoron=1;
-                          break;        
-                  case 'p':
-                          int v=readBatteryMillivolts();
-                          Serial1.println(v); 
-                          break;
-                  default :
-                          break;
-               }
-    }
-  ll=micros();
-  if((ll-lastll)>=(uint32_t)100000){  // lorsque le délai est de 10 ms alors faire                  
-      lastll=ll;
-      // calculer le deplacement des 2 roues
-      distdroit = distdroit + encoders.getCountsAndResetRight();
-      distgauche = distgauche + encoders.getCountsAndResetLeft();
-     // Serial1.print(distgauche);Serial1.print("   ");Serial1.print(distdroit);
-      //Serial1.print("   ");Serial1.println(dmax);
-      if(motoron==1){
-		//Serial1.println(micros());
-			if (indx < 200) {
-				tab[indx] = micros();
-				indx++;
-			}
-          if((distdroit+distgauche)/2>=dmax){
-                 motors.setSpeeds(0, 0);
-                 motoron=0;
-				 for (indx=0; indx<200; indx++) {
-					Serial1.println(micros());
-					Serial1.println(tab[indx]);
-          		}
-      }
-	}
-  }
 }
