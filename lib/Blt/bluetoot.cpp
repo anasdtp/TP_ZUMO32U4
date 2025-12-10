@@ -28,7 +28,7 @@ void setup() {
 	buttonB.waitForButton(); // on attend d'appuyer sur le bouton B
 	delay(800); //attendre pour ne pas risquer de blaisser le doigt
 
- Serial1.println("AT+NAME=ZUPR");// mettez votre nom ici
+ Serial1.println("AT+NAME=IA-nes");// mettez votre nom ici
   delay(800);
   Serial1.println("AT+UART=38400,0,0");
  buzzer.play("L16 reg4cdeg"); //petite musique pour la route
