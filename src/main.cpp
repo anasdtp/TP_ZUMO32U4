@@ -93,6 +93,13 @@ int16_t lastError = 0;
 // Fonction PID pour maintenir le robot sur cap constant
 // cap initial
 void PID_gyro(){
+	static bool firstRun = true;
+	static long dt;
+	if (firstRun) {
+		dt = millis();
+		firstRun = false;
+	}
+
 	// captick angle relatif du robot par rapport à 
   // saposition initiale
   turnSensorUpdate(); 
@@ -117,8 +124,17 @@ void PID_gyro(){
 	rightSpeed = constrain(rightSpeed, 0, (int16_t)maxSpeed);
 	// mettre à jour les valeurs de commandes moteurs
 	motors.setSpeeds(leftSpeed, rightSpeed);
-  Serial1.print(turnAngle); Serial1.print(" ");
+  Serial1.print(turnAngle); Serial1.print("             ");
   Serial1.println(speedDifference);
+  if ((millis() - dt) >= 3000) {
+	dt = millis();
+	motors.setSpeeds(0, 0);
+	while (1)
+	{
+		/* code */
+	}
+	
+  }
 }
 
 
