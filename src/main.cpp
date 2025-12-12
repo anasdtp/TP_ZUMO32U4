@@ -1,5 +1,5 @@
 /*This demo requires a Zumo 32U4 
-* Configuration :  
+*** Configuration :  
 	5 capteur de lignes donc vérifier que les 2 cavaliers sur la carte capteurs sont bien surla position interieure
 */
 
@@ -25,7 +25,7 @@ Zumo32U4IMU imu;
 #define NUM_SENSORS 5
 unsigned int lineSensorValues[NUM_SENSORS];
 
-//**** Fonction de rotation suivant le gyro
+//******** Fonction de rotation suivant le gyro
 void turncalibrate(short nbangle45){
 	// nbangle45 représente le nombre de fois 45°
 	// positif = sens trigo
@@ -62,9 +62,9 @@ void calibrateSensors2() {
 	turncalibrate(2); // +90 pour revenir su rla ligne
 }
 
-//*******************
+//*****************************************************
 // STEUP initialisations
-//******************
+//****************************************************
 void setup() {
   Serial1.begin(38400);
 	Wire.begin(); //I2C 
@@ -93,26 +93,18 @@ int16_t lastError = 0;
 // Fonction PID pour maintenir le robot sur cap constant
 // cap initial
 void PID_gyro(){
-	static bool firstRun = true;
-	static long dt;
-	if (firstRun) {
-		dt = millis();
-		firstRun = false;
-	}
-
 	// captick angle relatif du robot par rapport à 
-  // saposition initiale
+  // sa position initiale
   turnSensorUpdate(); 
   int32_t error= turnAngle;
-	//int16_t speedDifference = (error*500)/2982616 ;
-  int16_t speedDifference = error/90000 ;
+	int16_t speedDifference = error/90000 ;
 	//+ 6 * (error - lastError);
 	lastError = error;
 
 	// Get individual motor speeds.  The sign of speedDifference
 	// determines if the robot turns left or right.
 	int16_t leftSpeed = (int16_t)250 + speedDifference;
-	int16_t rightSpeed = (int16_t)250 - speedDifference;
+	int16_t rightSpeed = (int16_t)250-(250*4)/100 - speedDifference;
 
 	// Constrain our motor speeds to be between 0 and maxSpeed.
 	// One motor will always be turning at maxSpeed, and the other
@@ -124,33 +116,204 @@ void PID_gyro(){
 	rightSpeed = constrain(rightSpeed, 0, (int16_t)maxSpeed);
 	// mettre à jour les valeurs de commandes moteurs
 	motors.setSpeeds(leftSpeed, rightSpeed);
-  Serial1.print(turnAngle); Serial1.print("             ");
-  Serial1.println(speedDifference);
-  if ((millis() - dt) >= 3000) {
-	dt = millis();
-	motors.setSpeeds(0, 0);
-	while (1)
-	{
-		/* code */
-	}
-	
-  }
+//  Serial1.print(turnAngle);
+//  Serial1.print("   ");
+//  Serial1.println(speedDifference);
 }
 
+long integral;
+void PID(){
+  // Our "error" is how far we are away from the center of the line
+  int16_t error = positionl;
+          integral+=positionl;
+          // saturateur de l'integral
+          integral=(integral>2000 ? 2000 : (integral<-2000 ? -2000 : integral));
+          // il y a un proportionnel + derivé + integral
+  int16_t speedDifference = error/10 + 2*(error - lastError)+ integral/50;
+  lastError = error;
+
+  // Get individual motor speeds.  The sign of speedDifference
+  // determines if the robot turns left or right.
+  int16_t leftSpeed = (int16_t)350 + speedDifference;
+  int16_t rightSpeed = (int16_t)350 - speedDifference;
+
+  // Constrain our motor speeds to be between 0 and maxSpeed.
+  // One motor will always be turning at maxSpeed, and the other
+  // will be at maxSpeed-|speedDifference| if that is positive,
+  // else it will be stationary.  For some applications, you
+  // might want to allow the motor speed to go negative so that
+  // it can spin in reverse.
+  leftSpeed = constrain(leftSpeed, 0, (int16_t)maxSpeed);
+  rightSpeed = constrain(rightSpeed, 0, (int16_t)maxSpeed);
+
+  motors.setSpeeds(leftSpeed, rightSpeed);
+}
 
 long ll,lastll;
 long distdroit,distgauche;
+unsigned char autom;
+uint16_t incomingByte;
+unsigned long timeoutBluetooth = 0;
+const unsigned long TIMEOUT_BT = 10000; // 10 secondes timeout Bluetooth
+
+// Diagramme d'état :
+// État 0: Attente état path (en attente du Bluetooth)
+// État 1: Suivi de ligne (automatique)
+// État 2: Relay utilisé (mode relais)
+
+void automate(){
+       switch(autom){
+        case 0 :
+                  // ===== ÉTAT 0: Attente état path =====
+                  // Mode Bluetooth - contrôle manuel
+                  // Condition: bouton B appuyé
+                if( buttonB.getSingleDebouncedRelease()){
+                      delay(800);
+                      autom=1;  // Transition vers État 1
+                      buzzer.play("L16 cde");
+                      integral=0;
+                      lastError=0;
+                      Serial1.println("->État 1 (auto)");
+                }
+                // Condition: 'x' reçu par Bluetooth
+                // (géré dans loop)
+                
+                // Sécurité : si pas de commande Bluetooth depuis 10s, arrêt moteurs
+                if(millis() - timeoutBluetooth > TIMEOUT_BT){
+                      motors.setSpeeds(0,0);
+                }
+                break;
+                
+        case 1 :
+                  // ===== ÉTAT 1: Suivi de ligne =====
+                  // Mode suivi automatique ligne sol avec PID
+                  // Condition: Appui bouton B pour quitter
+                if( buttonB.getSingleDebouncedRelease()){
+                      delay(800);
+                      autom=0;  // Transition vers État 0
+                      motors.setSpeeds(0,0);
+                      buzzer.play("L16 edcg");
+                      Serial1.println("->État 0 (manuel)");
+                      break;
+                }
+                
+                // Condition: 's' reçu (stop)
+                // (géré dans loop)
+                
+                // Exécuter le PID pour suivi de ligne
+                PID();
+                break;
+
+        case 2 :
+                  // ===== ÉTAT 2: Relay utilisé =====
+                  // Mode relais/passthrough
+                  // À développer selon besoins
+                break;
+
+        default :
+                break;
+        
+    }
+}
+
 // Fonction LOOP exécutée à l'infini
 //
 void loop(){
-	
+// automate gestion bluetooth
+//////////////////////////////
+    if(Serial1.available()){   // permet de vérifier si un caractère a été reçu par le bluetooth
+            incomingByte = Serial1.read();   // Lire ce caractère si c'est bon
+            timeoutBluetooth = millis(); // Actualiser le timeout
+            //Serial1.println((char)incomingByte);
+            switch((unsigned)incomingByte){    // décider quoi faire avec le caractère reçu
+                  case 'c': // calibrage des 5 capteurs ligne sol
+                            calibrateSensors2();
+                            Serial1.println("Calibrage OK");
+                            incomingByte=0;
+                            break;
+                  case 'f': // deplacement vers l'avant (seulement en état 0)
+                            if(autom==0){
+                              motors.setSpeeds(180,180);
+                            }
+                            incomingByte=0;
+                            break;
+                  case 'x' : // Transition État 0 -> État 1 (suivi auto)
+                            if(autom==0){
+                              autom=1;
+                              integral=0;
+                              lastError=0;
+                              buzzer.play("L16 cde");
+                              Serial1.println("->État 1 (auto)");
+                            }
+                            incomingByte=0;
+                            break;
+                  case 'l': // tourne à gauche (seulement en état 0)
+                            if(autom==0){
+                              motors.setSpeeds(-160, 160);
+                            }
+                            incomingByte=0;
+                            break;                         
+                  case 'r': // tourne à droite (seulement en état 0)
+                            if(autom==0){
+                              motors.setSpeeds(160, -160);
+                            }
+                            incomingByte=0;
+                            break;
+                            
+                  case 's': // arrêt - Transition État 1 -> État 0
+                            if(autom==1){
+                              autom=0;
+                              motors.setSpeeds(0,0);
+                              buzzer.play("L16 edcg");
+                              Serial1.println("->État 0 (manuel)");
+                            } else {
+                              motors.setSpeeds(0,0);
+                            }
+                            incomingByte=0;
+                            break; 
+                  case 'v' : // envoi de la tension batterie et position ligne
+                            unsigned short v=readBatteryMillivolts ();
+                            Serial1.print("V:");
+                            Serial1.print(v);
+                            Serial1.print(" P:");
+                            Serial1.print(positionl);
+                            Serial1.print(" DR:");
+                            Serial1.print(distdroit);
+                            Serial1.print(" DG:");
+                            Serial1.println(distgauche);
+                            incomingByte=0;
+                            break;
+                  case 'e' : // arrêt d'urgence
+                            motors.setSpeeds(0,0);
+                            autom=0;
+                            buzzer.play("t200L8 g");
+                            Serial1.println("Urgence!");
+                            incomingByte=0;
+                            break;
+                  case 'i' : // info - affiche l'état actuel
+                            Serial1.print("État:");
+                            Serial1.print(autom);
+                            Serial1.print(" Pos:");
+                            Serial1.println(positionl);
+                            incomingByte=0;
+                            break;
+                  default : 
+                            break;
+            }
+    }
+    
+// coeur du système superviseur
+// lance et fait les acquisitions capteurs
+// appelle l'automate
+//////////////////////////////////////////////
+  positionl = lineSensors.readLine(lineSensorValues)-2000;  
 	ll=micros();
-	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire                  
+	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire                
 			lastll=ll;
-      PID_gyro();
 			// calculer le deplacement des 2 roues
 			distdroit = distdroit + encoders.getCountsAndResetRight();
 			distgauche = distgauche + encoders.getCountsAndResetLeft();
-
+      automate();
 	}
+
 }

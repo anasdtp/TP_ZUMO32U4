@@ -156,16 +156,28 @@ uint16_t incomingByte;
 unsigned long timeoutBluetooth = 0;
 const unsigned long TIMEOUT_BT = 10000; // 10 secondes timeout Bluetooth
 
+// Diagramme d'état :
+// État 0: Attente état path (en attente du Bluetooth)
+// État 1: Suivi de ligne (automatique)
+// État 2: Relay utilisé (mode relais)
+
 void automate(){
        switch(autom){
         case 0 :
+                  // ===== ÉTAT 0: Attente état path =====
                   // Mode Bluetooth - contrôle manuel
-                  // possibilité d'appuyer sur le bouton B pour passer en mode auto
+                  // Condition: bouton B appuyé
                 if( buttonB.getSingleDebouncedRelease()){
                       delay(800);
-                      autom=1;
+                      autom=1;  // Transition vers État 1
                       buzzer.play("L16 cde");
+                      integral=0;
+                      lastError=0;
+                      Serial1.println("->État 1 (auto)");
                 }
+                // Condition: 'x' reçu par Bluetooth
+                // (géré dans loop)
+                
                 // Sécurité : si pas de commande Bluetooth depuis 10s, arrêt moteurs
                 if(millis() - timeoutBluetooth > TIMEOUT_BT){
                       motors.setSpeeds(0,0);
@@ -173,47 +185,31 @@ void automate(){
                 break;
                 
         case 1 :
-                // Mode suivi automatique ligne sol avec PID
-                PID();
-                // Appui sur bouton B pour revenir au mode Bluetooth
+                  // ===== ÉTAT 1: Suivi de ligne =====
+                  // Mode suivi automatique ligne sol avec PID
+                  // Condition: Appui bouton B pour quitter
                 if( buttonB.getSingleDebouncedRelease()){
                       delay(800);
-                      autom=0;
+                      autom=0;  // Transition vers État 0
                       motors.setSpeeds(0,0);
                       buzzer.play("L16 edcg");
+                      Serial1.println("->État 0 (manuel)");
+                      break;
                 }
-                break;
                 
+                // Condition: 's' reçu (stop)
+                // (géré dans loop)
+                
+                // Exécuter le PID pour suivi de ligne
+                PID();
+                break;
+
         case 2 :
-                // Mode calibrage en cours
-                // Cet état peut être utilisé si calibrage est long
+                  // ===== ÉTAT 2: Relay utilisé =====
+                  // Mode relais/passthrough
+                  // À développer selon besoins
                 break;
 
-        case 5 :
-                // Mode arrêt d'urgence
-                motors.setSpeeds(0,0);
-                buzzer.play("t200L8 g");
-                delay(200);
-                autom=0; // Retour au mode Bluetooth
-                break;
-
-        case 10 :  
-                // Fin de route - détection ligne perdue
-                motors.setSpeeds(0,0);
-                buzzer.play("t110v127gggd+8.a+16gd+8.a+16g2");
-                while(buzzer.isPlaying()){ };
-                autom=11;
-                break;
-                
-        case 11:
-                // État final - attente
-                motors.setSpeeds(0,0);
-                if( buttonB.getSingleDebouncedRelease()){
-                      delay(800);
-                      autom=0; // Retour au mode Bluetooth
-                }
-                break;
-                
         default :
                 break;
         
@@ -235,65 +231,70 @@ void loop(){
                             Serial1.println("Calibrage OK");
                             incomingByte=0;
                             break;
-                  case 'f': // deplacement vers l'avant
-                            motors.setSpeeds(180,180);
+                  case 'f': // deplacement vers l'avant (seulement en état 0)
+                            if(autom==0){
+                              motors.setSpeeds(180,180);
+                            }
                             incomingByte=0;
                             break;
-                  case 'g' : // bascule en mode automatique suivi de ligne
-                            autom=1;
-                            integral=0; // Réinitialiser l'intégrale du PID
-                            lastError=0;
-                            Serial1.println("Mode auto");
+                  case 'x' : // Transition État 0 -> État 1 (suivi auto)
+                            if(autom==0){
+                              autom=1;
+                              integral=0;
+                              lastError=0;
+                              buzzer.play("L16 cde");
+                              Serial1.println("->État 1 (auto)");
+                            }
+                            incomingByte=0;
                             break;
-                  case 'l': // tourne à gauche
-                            motors.setSpeeds(-160, 160);   
+                  case 'l': // tourne à gauche (seulement en état 0)
+                            if(autom==0){
+                              motors.setSpeeds(-160, 160);
+                            }
                             incomingByte=0;
                             break;                         
-                  case 'r': // tourne à droite
-                            motors.setSpeeds(160, -160);
+                  case 'r': // tourne à droite (seulement en état 0)
+                            if(autom==0){
+                              motors.setSpeeds(160, -160);
+                            }
                             incomingByte=0;
                             break;
                             
-                  case 's': // arrêt
-                            motors.setSpeeds(0,0);
-                            autom=0;
+                  case 's': // arrêt - Transition État 1 -> État 0
+                            if(autom==1){
+                              autom=0;
+                              motors.setSpeeds(0,0);
+                              buzzer.play("L16 edcg");
+                              Serial1.println("->État 0 (manuel)");
+                            } else {
+                              motors.setSpeeds(0,0);
+                            }
                             incomingByte=0;
-                            Serial1.println("Arret");
                             break; 
                   case 'v' : // envoi de la tension batterie et position ligne
                             unsigned short v=readBatteryMillivolts ();
+                            Serial1.print("V:");
                             Serial1.print(v);
-                            Serial1.print("  ");
+                            Serial1.print(" P:");
                             Serial1.print(positionl);
-                            Serial1.print("  ");
+                            Serial1.print(" DR:");
                             Serial1.print(distdroit);
-                            Serial1.print("  ");
+                            Serial1.print(" DG:");
                             Serial1.println(distgauche);
                             incomingByte=0;
                             break;
                   case 'e' : // arrêt d'urgence
-                            autom=5;
+                            motors.setSpeeds(0,0);
+                            autom=0;
+                            buzzer.play("t200L8 g");
+                            Serial1.println("Urgence!");
                             incomingByte=0;
                             break;
                   case 'i' : // info - affiche l'état actuel
-                            Serial1.print("Autom=");
+                            Serial1.print("État:");
                             Serial1.print(autom);
-                            Serial1.print(" Pos=");
+                            Serial1.print(" Pos:");
                             Serial1.println(positionl);
-                            incomingByte=0;
-                            break;
-                  case '+' : // augmenter la vitesse base PID
-                            if(autom==1){
-                              // Peut modifier les coefficients PID ici
-                              Serial1.println("Vitesse+");
-                            }
-                            incomingByte=0;
-                            break;
-                  case '-' : // diminuer la vitesse base PID
-                            if(autom==1){
-                              // Peut modifier les coefficients PID ici
-                              Serial1.println("Vitesse-");
-                            }
                             incomingByte=0;
                             break;
                   default : 
