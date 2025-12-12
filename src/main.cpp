@@ -219,28 +219,33 @@ void automate(){
         case 1 :
                   // ===== ÉTAT 1: Suivi de ligne (normal) =====
                   // Vérifier si la ligne est visible avec isLineOK
-                  if(!isLineOK(lineSensorValues)){
+                  if(isLineOK(lineSensorValues)){
+                      // Ligne détectée
+                      lastLineDetectionTime = millis();
+                      lastLinePosition = positionl;
+                      
+                      // Si on était en mode perdu, on reprend le suivi normal
+                      if(lineLost){
+                          lineLost = false;
+                          buzzer.play("L16 e");
+                          Serial1.println("LIGNE RETROUVEE -> PID ligne");
+                      }
+                      
+                      // Mode normal : suivre la ligne
+                      PID();
+                  } else {
                       // Ligne pas détectée
-                      if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT){
+                      if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT && !lineLost){
                           // Timeout dépassé : ligne perdue
                           lineLost = true;
                           buzzer.play("L16 c");
                           Serial1.println("LIGNE PERDUE -> PID gyro");
                       }
-                  } else {
-                      // Ligne détectée : réinitialiser timer
-                      lastLineDetectionTime = millis();
-                      lastLinePosition = positionl;
-                      lineLost = false;
-                  }
-                  
-                  // Choisir le mode de suivi
-                  if(!lineLost){
-                      // Ligne visible : utiliser PID classique sur position ligne
-                      PID();
-                  } else {
-                      // Ligne perdue : utiliser PID gyro pour maintenir cap et chercher
-                      PID_gyro();
+                      
+                      // Mode dégradé : chercher la ligne avec gyro
+                      if(lineLost){
+                          PID_gyro();
+                      }
                   }
                   
                   // Condition: bouton B pour revenir en État 0
