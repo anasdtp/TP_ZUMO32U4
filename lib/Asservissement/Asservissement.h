@@ -16,6 +16,12 @@ private:
   float Ki_; // Integral gain
   float Kd_; // Derivative gain
 
+  float integral = 0.0, prev_error = 0.0;
+  const float MAX_INTEGRAL = (5000.0F);
+
+  float derivative;
+  float output;
+
   float calculatePID(float error, float dt);
 };
 

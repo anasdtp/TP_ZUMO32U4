@@ -14,10 +14,14 @@ Asservissement::~Asservissement()
 float Asservissement::calculatePID(float error, float dt)
 {
     // Variables for PID control
-    static float integral = 0.0, prev_error = 0.0;
     integral += error * dt;
-    float derivative = (error - prev_error) / dt;
-    float output = Kp_ * error + Ki_ * integral + Kd_ * derivative;
+    if (integral > MAX_INTEGRAL) {
+      integral = MAX_INTEGRAL;
+    } else if (integral < -MAX_INTEGRAL) {
+      integral = -MAX_INTEGRAL;
+    }
+    derivative = (error - prev_error) / dt;
+    output = Kp_ * error + Ki_ * integral + Kd_ * derivative;
     prev_error = error;
     return output;
 }
