@@ -7,6 +7,7 @@
 #include <Zumo32U4.h>
 #include "gyro_use.h"
 #include <math.h>
+#include <Asservissement.h>
 
 // This is the maximum speed the motors will be allowed to turn.
 // A maxSpeed of 400 lets the motors go at top speed.  Decrease
@@ -20,6 +21,7 @@ Zumo32U4ButtonB buttonB;
 Zumo32U4Encoders encoders;
 Zumo32U4IMU imu;
 
+Asservissement pid(0.15, 0, 4.0);
 
 // tableau pour récupérer les valeurs des 5 capteurs sol
 #define NUM_SENSORS 5
@@ -66,7 +68,7 @@ void calibrateSensors2() {
 // STEUP initialisations
 //****************************************************
 void setup() {
-  Serial1.begin(38400);
+  	Serial1.begin(38400);
 	Wire.begin(); //I2C 
 	buttonB.waitForButton(); // on attend d'appuyer sur le bouton B
 	delay(800); //attendre pour ne pas risquer de blaisser le doigt
@@ -123,14 +125,7 @@ void PID_gyro(){
 
 long integral;
 void PID(){
-  // Our "error" is how far we are away from the center of the line
-  int16_t error = positionl;
-          integral+=positionl;
-          // saturateur de l'integral
-          integral=(integral>2000 ? 2000 : (integral<-2000 ? -2000 : integral));
-          // il y a un proportionnel + derivé + integral
-  int16_t speedDifference = error/10 + 2*(error - lastError)+ integral/50;
-  lastError = error;
+  int16_t speedDifference = pid.calculatePID(positionl, 1);
 
   // Get individual motor speeds.  The sign of speedDifference
   // determines if the robot turns left or right.

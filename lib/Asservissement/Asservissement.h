@@ -10,6 +10,8 @@ public:
   ~Asservissement();
 
   float AsserMot(float pcons, float pos, float dt);//dt en secondes
+  float calculatePID(float error, float dt);
+
 private:
   // Constants for PID control
   float Kp_; // Proportional gain
@@ -17,11 +19,10 @@ private:
   float Kd_; // Derivative gain
 
   float integral = 0.0, prev_error = 0.0;
-  const float MAX_INTEGRAL = (5000.0F);
+  const float MAX_INTEGRAL = (2000.0F);
 
   float derivative;
   float output;
 
-  float calculatePID(float error, float dt);
 };
 
