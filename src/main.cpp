@@ -12,7 +12,7 @@
 // This is the maximum speed the motors will be allowed to turn.
 // A maxSpeed of 400 lets the motors go at top speed.  Decrease
 // this value to impose a speed limit.
-const uint16_t maxSpeed = 400;
+const uint16_t maxSpeed = 290;
 
 Zumo32U4Buzzer buzzer;
 Zumo32U4LineSensors lineSensors;
@@ -21,7 +21,7 @@ Zumo32U4ButtonB buttonB;
 Zumo32U4Encoders encoders;
 Zumo32U4IMU imu;
 
-Asservissement pid(0.18, 0.0005, 0.25);
+Asservissement pid(0.25, 0.005, 0.25);
 
 // tableau pour récupérer les valeurs des 5 capteurs sol
 #define NUM_SENSORS 5
@@ -49,22 +49,55 @@ void turncalibrate(short nbangle45){
 	turnSensorUpdate();
 }
 
-bool isLineOK(unsigned int *p){
+// Retourne l'état de la ligne détectée
+// 0 = pas de ligne (tous les capteurs captent du blanc)
+// 1 = ligne loin (capteurs extrêmes détectent du noir)
+// 2 = ligne OK (capteurs centraux détectent du noir)
+// 3 = tous les capteurs détectent du noir
+int8_t checkLine(unsigned int *p){
+	static unsigned char lineNotDetectedCount = 0;
 	unsigned char i;
 	unsigned char sens_stat=0;
+	
+	// Vérifier si tous les capteurs détectent du noir
+	bool allBlack = true;
+	for(i=0;i<5;i++){
+		if(p[i] >= (lineSensors.calibratedMinimumOn[i]*2+lineSensors.calibratedMaximumOn[i])/3){
+			allBlack = false;
+			break;
+		}
+	}
+	if(allBlack){
+		lineNotDetectedCount = 0;
+		return 3; // Tous les capteurs actifs
+	}
+	
 	for(i=0;i<5;i++){
 		sens_stat=sens_stat<<1;
-		// on calcul un seil de décision pour dire que c'est blanc 0 ou noir 1
-		// si le capteur est supérier à un seil alors c'est nor donc 1 sinon c'est blan 0
-		sens_stat=sens_stat+(p[i]>(lineSensors.calibratedMinimumOn[i]*2+
+		sens_stat=sens_stat+(p[i]<(lineSensors.calibratedMinimumOn[i]*2+
 						lineSensors.calibratedMaximumOn[i])/3 ? 1:0);
-		// variable ret va contenir 5 bits LSB utiles
-		//  les bits ret  ... b4 b3 b2 b1 b0
-		// chaque bit bi représente un capteur (b4 de gauche et b0 celui de droite)
-		// bi= 1 alors le capteur a déecté une ligne noire, sinon 0
-	} 
-  return (((sens_stat&0x0E)!=0) && ((sens_stat&0x11)==0));
-  }
+	}
+	
+	// Vérifier si pas de ligne du tout (tous les bits à 0)
+	if(sens_stat == 0){
+		lineNotDetectedCount++;
+		if(lineNotDetectedCount >= 2){
+			return 0; // Pas de ligne (après 2 mesures)
+		}
+		return 1; // Maintenir l'état précédent pendant les 2 premières mesures
+	}
+	
+	// Vérifier si ligne OK (capteurs centraux détectent du noir, extrêmes blanc)
+	// bits: b4 b3 b2 b1 b0 (b2 est le centre)
+	if(((sens_stat&0x0E)!=0) && ((sens_stat&0x11)==0)){
+		lineNotDetectedCount = 0;
+		return 2; // Ligne OK
+	}
+	
+	// Sinon ligne loin (capteurs extrêmes actifs)
+	lineNotDetectedCount = 0;
+	return 1; // Ligne loin
+}
 
 // Fonction pour effectuer la rotation 90° à gaucher et à droite 
 // de la ligne pour effectuer le calibrage des 5 capteurs sol
@@ -143,7 +176,10 @@ void PID_gyro(){
 
 long integral;
 void PID(){
-  int16_t speedDifference = pid.calculatePID(positionl, 1);
+	static int16_t speedDifference = 0;
+
+  // Read the line sensor values into the lineSensorValues array.
+	speedDifference = pid.calculatePID(positionl, 1);
 
   // Get individual motor speeds.  The sign of speedDifference
   // determines if the robot turns left or right.
@@ -172,7 +208,7 @@ const unsigned long TIMEOUT_BT = 10000; // 10 secondes timeout Bluetooth
 // Variables pour détection perte de ligne
 int16_t lastLinePosition = 2000; // Dernière position valide de la ligne
 unsigned long lastLineDetectionTime = 0;
-const unsigned long LINE_LOST_TIMEOUT = 500; // 500ms sans détection = ligne perdue
+const unsigned long LINE_LOST_TIMEOUT = 10; // 500ms sans détection = ligne perdue
 boolean lineLost = false;
 const int16_t LINE_LOST_THRESHOLD = 2500; // Seuil de perte de ligne (capteurs au maximum)
 
@@ -208,7 +244,7 @@ void automate(){
                 }
                 
                 // Vérifier s'il y a une ligne visible en État 0
-                if(!isLineOK(lineSensorValues)){
+                if(!checkLine(lineSensorValues)){
                   autom=0;
                 }
                 break;
@@ -217,59 +253,27 @@ void automate(){
                   // ===== ÉTAT 1: Suivi de ligne (auto) =====
                   
                     // Lire l'état de la ligne
-                    if(isLineOK(lineSensorValues)){
+                    if(checkLine(lineSensorValues) == 3){
+                      etat_ligne = 2; // on s'arrete
+                    }
+					else if(checkLine(lineSensorValues)){
                       etat_ligne = 1; // LIGNE VISIBLE
                     } else {
-                      if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT && !lineLost){
-                        etat_ligne = 0; // LIGNE PAS VISIBLE
-                        turnSensorReset();
+                      	etat_ligne = 0; // LIGNE PAS VISIBLE
+						turnSensorReset();
 
-                        // On a perdu une ligne qu'on suivait
-                        lineLost = true;
-                        buzzer.play("L16 c");
-                      }
-                      else {
-                        etat_ligne = 1; // LIGNE VISIBLE (juste vu)
-                      }
+						// On a perdu une ligne qu'on suivait
+						lineLost = true;
+						buzzer.play("L16 c");
                     }
                     
                     switch(etat_ligne){
                       case 1:
-                        // LIGNE VISIBLE
-                        lastLineDetectionTime = millis();
-                        lastLinePosition = positionl;
-                        
-                        // Si on était en mode perdu, on reprend le suivi
-                        if(lineLost){
-                          lineLost = false;
-                          buzzer.play("L16 e");
-                        }
-                        
-                        // Suivre la ligne
                         PID();
                         break;
                         
                       case 0:
-                        // LIGNE PAS VISIBLE
-                        
-                        // Vérifier si on a déjà vu une ligne avant
-                        if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT && !lineLost){
-                          // On a perdu une ligne qu'on suivait
-                          lineLost = true;
-                          turnSensorUpdate(); // Mettre à jour le gyro
-                          gyroRefAngle = turnAngle; // Mémoriser l'angle actuel
-                          buzzer.play("L16 c");
-                          Serial1.println("LIGNE PERDUE -> PID gyro");
-                        }
-                        
-                        // Choisir l'action selon l'état
-                        if(lineLost){
-                          // Mode dégradé : chercher avec gyro
-                          PID_gyro();
-                        } else {
-                          // Mode attente : jamais vu de ligne au démarrage
-                          motors.setSpeeds(0, 0);
-                        }
+                        PID_gyro();
                         break;
                         
                       default:
@@ -293,14 +297,15 @@ void automate(){
                   // ===== ÉTAT 2: Relay utilisé =====
                   // Mode relais/passthrough
                   // Vérifier s'il y a une ligne visible en État 2
-                  if(!isLineOK(lineSensorValues)){
-                      if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT){
-                          lineLost = true;
-                      }
-                  } else {
-                      lastLineDetectionTime = millis();
-                      lineLost = false;
-                  }
+                  motors.setSpeeds(0,0);
+				 buzzer.play("L16 edcg");
+				//   autom=0;
+				while (1)
+				{
+					/* code */
+				}
+				
+				  Serial1.println("->État 0 (manuel)");
                 break;
 
         default :
@@ -330,7 +335,7 @@ void loop(){
                             incomingByte=0;
                             break;
                   case 'x' : // Transition État 0 -> État 1 (suivi auto)
-                            if(autom==0 && isLineOK(lineSensorValues)){
+                            if(autom==0 && checkLine(lineSensorValues)){
                               autom=1;
                               integral=0;
                               lastError=0;
