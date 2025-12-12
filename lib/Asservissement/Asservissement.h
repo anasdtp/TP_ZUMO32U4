@@ -11,6 +11,10 @@ public:
 
   float AsserMot(float pcons, float pos, float dt);//dt en secondes
   float calculatePID(float error, float dt);
+  void resetPID(){
+      integral = 0.0;
+      prev_error = 0.0;
+  }
 
 private:
   // Constants for PID control
