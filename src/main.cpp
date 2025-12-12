@@ -69,7 +69,6 @@ bool isLineOK(unsigned int *p){
 // Fonction pour effectuer la rotation 90° à gaucher et à droite 
 // de la ligne pour effectuer le calibrage des 5 capteurs sol
 void calibrateSensors2() { 
-	const uint16_t calibrationSpeed = 160;
 	// Wait 0.1 second and then begin automatic sensor calibration
 	// by rotating in place to sweep the sensors over the line
 	delay(100);
@@ -97,6 +96,7 @@ void setup() {
 	imu.enableDefault(); //initialiser centrale Imu par défaut
 	imu.configureForTurnSensing(); // sensibilité maximale
 
+  delay(500);
 	turnSensorSetup(); // calcul offset du gyro
 
 	// Play music and wait for it to finish before we start driving.
@@ -109,13 +109,14 @@ void setup() {
 
 int16_t positionl;
 int16_t lastError = 0;
+int32_t gyroRefAngle = 0; // Angle du gyro mémorisé quand la ligne est perdue
+
 // Fonction PID pour maintenir le robot sur cap constant
 // cap initial
 void PID_gyro(){
-	// captick angle relatif du robot par rapport à 
-  // sa position initiale
+	// Maintenir le cap à partir de l'angle mémorisé quand la ligne a été perdue
   turnSensorUpdate(); 
-  int32_t error= turnAngle;
+  int32_t error = turnAngle - gyroRefAngle;
 	int16_t speedDifference = error/90000 ;
 	//+ 6 * (error - lastError);
 	lastError = error;
@@ -123,7 +124,7 @@ void PID_gyro(){
 	// Get individual motor speeds.  The sign of speedDifference
 	// determines if the robot turns left or right.
 	int16_t leftSpeed = (int16_t)250 + speedDifference;
-	int16_t rightSpeed = (int16_t)250-(250*4)/100 - speedDifference;
+	int16_t rightSpeed = (int16_t)250-(250*2)/100 - speedDifference;
 
 	// Constrain our motor speeds to be between 0 and maxSpeed.
 	// One motor will always be turning at maxSpeed, and the other
@@ -161,9 +162,9 @@ void PID(){
   motors.setSpeeds(leftSpeed, rightSpeed);
 }
 
-long ll,lastll;
+long ll,lastll; 
 long distdroit,distgauche;
-unsigned char autom;
+unsigned char autom, etat_ligne;
 uint16_t incomingByte;
 unsigned long timeoutBluetooth = 0;
 const unsigned long TIMEOUT_BT = 10000; // 10 secondes timeout Bluetooth
@@ -195,6 +196,7 @@ void automate(){
                       lastError=0;
                       lineLost=false;
                       turnSensorReset();
+                      lastLineDetectionTime = millis(); // Initialiser timer au démarrage
                       Serial1.println("->État 1 (auto)");
                 }
                 // Condition: 'x' reçu par Bluetooth
@@ -207,41 +209,72 @@ void automate(){
                 
                 // Vérifier s'il y a une ligne visible en État 0
                 if(!isLineOK(lineSensorValues)){
-                      if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT){
-                          lineLost = true;
-                      }
-                } else {
-                      lastLineDetectionTime = millis();
-                      lineLost = false;
+                  autom=0;
                 }
                 break;
                 
         case 1 :
-                  // ===== ÉTAT 1: Suivi de ligne (normal) =====
-                  // Vérifier si la ligne est visible avec isLineOK
-                  if(!isLineOK(lineSensorValues)){
-                      // Ligne pas détectée
-                      if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT){
-                          // Timeout dépassé : ligne perdue
+                  // ===== ÉTAT 1: Suivi de ligne (auto) =====
+                  
+                    // Lire l'état de la ligne
+                    if(isLineOK(lineSensorValues)){
+                      etat_ligne = 1; // LIGNE VISIBLE
+                    } else {
+                      if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT && !lineLost){
+                        etat_ligne = 0; // LIGNE PAS VISIBLE
+                        turnSensorReset();
+
+                        // On a perdu une ligne qu'on suivait
+                        lineLost = true;
+                        buzzer.play("L16 c");
+                      }
+                      else {
+                        etat_ligne = 1; // LIGNE VISIBLE (juste vu)
+                      }
+                    }
+                    
+                    switch(etat_ligne){
+                      case 1:
+                        // LIGNE VISIBLE
+                        lastLineDetectionTime = millis();
+                        lastLinePosition = positionl;
+                        
+                        // Si on était en mode perdu, on reprend le suivi
+                        if(lineLost){
+                          lineLost = false;
+                          buzzer.play("L16 e");
+                        }
+                        
+                        // Suivre la ligne
+                        PID();
+                        break;
+                        
+                      case 0:
+                        // LIGNE PAS VISIBLE
+                        
+                        // Vérifier si on a déjà vu une ligne avant
+                        if(millis() - lastLineDetectionTime > LINE_LOST_TIMEOUT && !lineLost){
+                          // On a perdu une ligne qu'on suivait
                           lineLost = true;
+                          turnSensorUpdate(); // Mettre à jour le gyro
+                          gyroRefAngle = turnAngle; // Mémoriser l'angle actuel
                           buzzer.play("L16 c");
                           Serial1.println("LIGNE PERDUE -> PID gyro");
-                      }
-                  } else {
-                      // Ligne détectée : réinitialiser timer
-                      lastLineDetectionTime = millis();
-                      lastLinePosition = positionl;
-                      lineLost = false;
-                  }
-                  
-                  // Choisir le mode de suivi
-                  if(!lineLost){
-                      // Ligne visible : utiliser PID classique sur position ligne
-                      PID();
-                  } else {
-                      // Ligne perdue : utiliser PID gyro pour maintenir cap et chercher
-                      PID_gyro();
-                  }
+                        }
+                        
+                        // Choisir l'action selon l'état
+                        if(lineLost){
+                          // Mode dégradé : chercher avec gyro
+                          PID_gyro();
+                        } else {
+                          // Mode attente : jamais vu de ligne au démarrage
+                          motors.setSpeeds(0, 0);
+                        }
+                        break;
+                        
+                      default:
+                        break;
+                    }
                   
                   // Condition: bouton B pour revenir en État 0
                   if( buttonB.getSingleDebouncedRelease()){
@@ -272,13 +305,13 @@ void automate(){
 
         default :
                 break;
-        
     }
 }
 
 // Fonction LOOP exécutée à l'infini
 //
 void loop(){
+  positionl = lineSensors.readLine(lineSensorValues)-2000;
 // automate gestion bluetooth
 //////////////////////////////
     if(Serial1.available()){   // permet de vérifier si un caractère a été reçu par le bluetooth
@@ -288,7 +321,6 @@ void loop(){
             switch((unsigned)incomingByte){    // décider quoi faire avec le caractère reçu
                   case 'c': // calibrage des 5 capteurs ligne sol
                             calibrateSensors2();
-                            Serial1.println("Calibrage OK");
                             incomingByte=0;
                             break;
                   case 'f': // deplacement vers l'avant (seulement en état 0)
@@ -298,7 +330,7 @@ void loop(){
                             incomingByte=0;
                             break;
                   case 'x' : // Transition État 0 -> État 1 (suivi auto)
-                            if(autom==0){
+                            if(autom==0 && isLineOK(lineSensorValues)){
                               autom=1;
                               integral=0;
                               lastError=0;
@@ -370,15 +402,16 @@ void loop(){
                   default : 
                             break;
             }
+            
     }
     
 // coeur du système superviseur
 // lance et fait les acquisitions capteurs
 // appelle l'automate
 //////////////////////////////////////////////
-  positionl = lineSensors.readLine(lineSensorValues)-2000;  
+    
 	ll=micros();
-	if((ll-lastll)>=10000){  // lorsque le délai est de 10 ms alors faire                
+	if((ll-lastll)>=20000){  // lorsque le délai est de 20 ms alors faire                
 			lastll=ll;
 			// calculer le deplacement des 2 roues
 			distdroit = distdroit + encoders.getCountsAndResetRight();

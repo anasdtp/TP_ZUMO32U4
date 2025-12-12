@@ -45,9 +45,6 @@ void turnSensorSetup()
   // Turn on the yellow LED in case the LCD is not available.
 //  ledYellow(1);
 
-  // Delay to give the user time to remove their finger.
-  delay(500);
-
   // Calibrate the gyro.
   int32_t total = 0;
   for (uint16_t i = 0; i < 1024; i++)
