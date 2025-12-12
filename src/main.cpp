@@ -68,7 +68,7 @@ int32_t gyroRefAngle = 0; // Angle du gyro mémorisé quand la ligne est perdue
 unsigned long gyroModeStartTime = 0; // Timer pour mode gyro
 
 // Variables pour détection d'obstacles
-const uint8_t PROXIMITY_THRESHOLD = 2; // Seuil de détection d'obstacle
+const uint8_t PROXIMITY_THRESHOLD = 1; // Seuil de détection d'obstacle
 const uint16_t REVERSE_SPEED = 150; // Vitesse de recul
 const uint16_t REVERSE_TIME = 500; // Temps de recul en ms (500ms)
 bool obstacleDetected = false;
@@ -140,36 +140,41 @@ const unsigned long LINE_SEARCH_TIMEOUT = 2000; // 2s max pour recherche active
 const int16_t LINE_LOST_THRESHOLD = 2500; // Seuil de perte de ligne (capteurs au maximum)
 
 void suivieLigne(){
-	// Vérifier les capteurs de proximité pour détecter un obstacle
-	proxSensors.read();
-	uint8_t proxLeft = proxSensors.countsLeftWithLeftLeds();
-	uint8_t proxFront = proxSensors.countsFrontWithLeftLeds() + proxSensors.countsFrontWithRightLeds();
-	uint8_t proxRight = proxSensors.countsRightWithRightLeds();
+	// Filtre sur trois mesures pour éviter les faux positifs
+	// static uint8_t proxFront = 0, proxFrontPrev = 0;
 	
-	// Si obstacle détecté devant
-	if(proxFront >= PROXIMITY_THRESHOLD || proxLeft >= PROXIMITY_THRESHOLD || proxRight >= PROXIMITY_THRESHOLD){
-		if(!obstacleDetected){
-			// Obstacle vient d'être détecté
-			obstacleDetected = true;
-			reverseStartTime = millis();
-			Serial1.println("->Obstacle détecté! Arrêt et recul");
-		}
+	// // Vérifier les capteurs de proximité pour détecter un obstacle
+	// proxSensors.read();
+	// // uint8_t proxLeft = proxSensors.countsLeftWithLeftLeds();
+	// proxFrontPrev = proxFront;
+	// proxFront = proxSensors.countsFrontWithLeftLeds() + proxSensors.countsFrontWithRightLeds();
+	// // uint8_t proxRight = proxSensors.countsRightWithRightLeds();
+	
+	// // Si obstacle détecté devant
+	// if(proxFront >= PROXIMITY_THRESHOLD && proxFrontPrev >= PROXIMITY_THRESHOLD)
+	// {
+	// 	if(!obstacleDetected){
+	// 		// Obstacle vient d'être détecté
+	// 		obstacleDetected = true;
+	// 		reverseStartTime = millis();
+	// 		Serial1.println("->Obstacle détecté! Arrêt et recul");
+	// 	}
 		
-		// Reculer pendant REVERSE_TIME ms
-		if(millis() - reverseStartTime < REVERSE_TIME){
-			motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
-		} else {
-			// Après le recul, arrêter et retourner à l'état manuel (autom 0)
-			motors.setSpeeds(0, 0);
-			autom = 0;
-			etat_ligne = 1;
-			pid.resetPID();
-			pid_gyro.resetPID();
-			obstacleDetected = false;
-			Serial1.println("->Retour état 0 (manuel)");
-		}
-		return; // Ne pas continuer le suivi de ligne
-	}
+	// 	// Reculer pendant REVERSE_TIME ms
+	// 	if(millis() - reverseStartTime < REVERSE_TIME){
+	// 		motors.setSpeeds(-REVERSE_SPEED, -REVERSE_SPEED);
+	// 	} else {
+	// 		// Après le recul, arrêter et retourner à l'état manuel (autom 0)
+	// 		motors.setSpeeds(0, 0);
+	// 		autom = 0;
+	// 		etat_ligne = 1;
+	// 		pid.resetPID();
+	// 		pid_gyro.resetPID();
+	// 		obstacleDetected = false;
+	// 		Serial1.println("->Retour état 0 (manuel)");
+	// 	}
+	// 	return; // Ne pas continuer le suivi de ligne
+	// }
 	
 	obstacleDetected = false; // Réinitialiser si pas d'obstacle
 	
